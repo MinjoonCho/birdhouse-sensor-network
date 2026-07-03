@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from . import camera_placement, candidates, config, fire_graph, mountains, scoring, smoke_paths
+from . import camera_placement, candidates, config, fire_graph, mountains, smoke_paths
 from .dem import load_region_dem
 from .sources import air_quality, asos, fire_history, vworld_wfs
 
@@ -31,18 +31,9 @@ def run_region(region_key: str, log=print) -> dict:
     log(f"[{region_key}] 발화 후보지 생성...")
     ignition_candidates = candidates.generate_ignition_candidates(dem, fire_summary)
 
-    log(f"[{region_key}] 카메라 후보지 생성...")
-    camera_candidates = candidates.generate_camera_candidates(dem, ignition_candidates)
-
     log(f"[{region_key}] 연기 이동 경로 생성...")
     paths = smoke_paths.generate_smoke_paths(
         ignition_candidates, wind_data.get("windRose", {}), wind_data.get("avgWindSpeedMs")
-    )
-
-    log(f"[{region_key}] line-of-sight 및 스코어링...")
-    scored_cameras = scoring.score_cameras(
-        dem, cfg, camera_candidates, ignition_candidates, paths,
-        wind_data, fire_summary, air_quality_data, vworld_layers,
     )
 
     log(f"[{region_key}] 산불 확산 그래프 구성...")
@@ -73,7 +64,6 @@ def run_region(region_key: str, log=print) -> dict:
         "windBySeason": wind_by_season,
         "airQuality": air_quality_data,
         "ignitionCandidates": ignition_candidates,
-        "cameraCandidates": scored_cameras,
         "smokePaths": paths,
         "mountainCoverage": mountain_coverage,
     }

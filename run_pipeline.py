@@ -31,10 +31,11 @@ def main() -> None:
         out_path = config.WEB_DATA_DIR / f"{region_key}.json"
         out_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
         elapsed = time.time() - t0
+        total_cameras = sum(len(m["recommendedCameras"]) for m in result["mountainCoverage"])
         print(
             f"[{region_key}] 완료 ({elapsed:.1f}s) -> {out_path} "
-            f"(발화후보 {len(result['ignitionCandidates'])}, 카메라후보 {len(result['cameraCandidates'])}, "
-            f"경로 {len(result['smokePaths'])})"
+            f"(발화후보 {len(result['ignitionCandidates'])}, 경로 {len(result['smokePaths'])}, "
+            f"산 {len(result['mountainCoverage'])}개, 그래프 추천 카메라 {total_cameras}개)"
         )
         print(f"  sourceStatus: {result['sourceStatus']}")
 

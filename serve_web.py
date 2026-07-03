@@ -42,6 +42,19 @@ def _json_bytes(payload: dict) -> bytes:
     return json.dumps(payload, ensure_ascii=False).encode("utf-8")
 
 
+def _flatten_recommended_cameras(region_data: dict) -> list[dict]:
+    """산별 그래프 최적화 결과(mountainCoverage)를 즉석 시뮬레이션이 쓰는
+    {id, lon, lat} 형태의 평평한 카메라 목록으로 펼친다."""
+    cameras = []
+    for mountain in region_data.get("mountainCoverage", []):
+        for cam in mountain.get("recommendedCameras", []):
+            cameras.append({
+                "id": f"{mountain['mountainId']}-cam{cam['order']}",
+                "lon": cam["lon"], "lat": cam["lat"],
+            })
+    return cameras
+
+
 def handle_simulate(query: dict) -> tuple[int, bytes]:
     region_key = query.get("region", [""])[0]
     if region_key not in config.REGIONS:
@@ -61,7 +74,7 @@ def handle_simulate(query: dict) -> tuple[int, bytes]:
 
     region_data = _get_region_data(region_key)
     wind_bundle = region_data.get("windBySeason", {}).get(season) or region_data.get("wind", {})
-    camera_candidates = region_data.get("cameraCandidates", [])
+    camera_candidates = _flatten_recommended_cameras(region_data)
 
     try:
         result = simulate_ignition(

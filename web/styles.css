@@ -360,6 +360,7 @@ input[type="range"] {
 
 .line-mountain { background: #7fa6bd; }
 .dot-mountain-cam { background: #c792ea; }
+.dot-mountain-overview { background: rgba(199, 146, 234, 0.55); }
 
 #mountain-select {
   width: 100%;
@@ -449,110 +450,6 @@ input[type="range"] {
   accent-color: var(--accent);
 }
 
-/* 랭킹 리스트 */
-.ranking-list {
-  display: grid;
-  gap: 6px;
-  max-height: 320px;
-  overflow: auto;
-}
-
-.ranking-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: 2px;
-  cursor: pointer;
-  transition: 120ms ease;
-}
-
-.ranking-item:hover,
-.ranking-item.is-selected {
-  border-color: var(--line-strong);
-  background: rgba(127, 166, 189, 0.06);
-}
-
-.rank-num {
-  font-family: "Space Grotesk", monospace;
-  font-size: 0.8rem;
-  color: var(--muted);
-  min-width: 22px;
-}
-
-.rank-score {
-  margin-left: auto;
-  font-family: "Space Grotesk", monospace;
-  font-weight: 700;
-}
-
-.rank-id {
-  font-size: 0.86rem;
-}
-
-/* 점수 배지 & 막대 */
-.score-badge {
-  font-family: "Space Grotesk", monospace;
-  font-size: 1.3rem;
-  font-weight: 700;
-  color: var(--good);
-}
-
-.score-bars {
-  display: grid;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.score-bar-row {
-  display: grid;
-  gap: 4px;
-}
-
-.score-bar-meta {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.78rem;
-  color: var(--muted);
-}
-
-.score-bar-meta .approx-tag {
-  color: var(--accent-3);
-  font-size: 0.68rem;
-  margin-left: 4px;
-}
-
-.score-track {
-  width: 100%;
-  height: 7px;
-  background: rgba(126, 145, 158, 0.14);
-}
-
-.score-fill {
-  height: 100%;
-  background: linear-gradient(90deg, var(--accent-2), var(--good));
-}
-
-.score-fill.risk {
-  background: linear-gradient(90deg, var(--warn), var(--bad));
-}
-
-.reasons-block {
-  display: grid;
-  gap: 6px;
-  font-size: 0.86rem;
-  line-height: 1.55;
-  color: #d8e1eb;
-}
-
-.reasons-block p {
-  margin: 0;
-  padding: 6px 8px;
-  border-left: 2px solid var(--accent);
-  background: rgba(127, 166, 189, 0.05);
-}
-
 /* 바람장미 미니 SVG */
 #wind-rose svg {
   width: 100%;
@@ -586,10 +483,7 @@ input[type="range"] {
 }
 
 .dot-ignition { background: var(--bad); }
-.dot-cam-top { background: var(--good); }
-.dot-cam-low { background: var(--muted); }
 .line-smoke { background: var(--accent-3); }
-.line-los { background: var(--good); }
 
 .leaflet-container {
   background: #10161a;

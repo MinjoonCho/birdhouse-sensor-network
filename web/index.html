@@ -67,39 +67,13 @@
           </section>
 
           <section class="sidebar-card">
-            <p class="card-kicker">시간 조건</p>
-            <h2>봄철(3~5월) 오후 기준</h2>
-            <div class="stack">
-              <label class="control-label">
-                기준 시각 (역광·광학 신뢰도)
-                <div class="segment-control" id="hour-control">
-                  <button class="segment" data-hour="9">09시</button>
-                  <button class="segment" data-hour="12">12시</button>
-                  <button class="segment is-active" data-hour="14">14시</button>
-                  <button class="segment" data-hour="15">15시</button>
-                  <button class="segment" data-hour="18">18시</button>
-                </div>
-              </label>
-            </div>
-          </section>
-
-          <section class="sidebar-card">
             <p class="card-kicker">지도 레이어</p>
             <h2>표시 항목</h2>
             <div class="stack" id="layer-toggles">
               <label class="toggle-row"><input type="checkbox" data-layer="ignition" checked> 발화 후보지</label>
               <label class="toggle-row"><input type="checkbox" data-layer="smoke" checked> 연기 이동 경로</label>
-              <label class="toggle-row"><input type="checkbox" data-layer="camera" checked> 카메라 후보지(휴리스틱)</label>
-              <label class="toggle-row"><input type="checkbox" data-layer="los"> 시야 연결선 (선택 카메라)</label>
               <label class="toggle-row"><input type="checkbox" data-layer="mountain" checked> 산별 최소 카메라 배치</label>
             </div>
-          </section>
-
-          <section class="sidebar-card">
-            <p class="card-kicker">필터</p>
-            <h2>카메라 후보 상위 N</h2>
-            <input type="range" id="top-n-slider" min="10" max="150" step="10" value="80">
-            <div class="selection-summary" id="top-n-label"></div>
           </section>
 
           <section class="sidebar-card">
@@ -110,6 +84,8 @@
                 산마다 격자로 나눠 화재 확산(경사 가중)을 시뮬레이션하고,
                 최악의 탐지 시간이 최소가 되는 카메라 배치를 greedy k-center로
                 계산했습니다. 센서 사거리 500m~1km, 목표 20분 기준입니다.
+                지도의 옅은 점은 산마다 첫 번째(가장 중요한) 추천 카메라이고,
+                아래에서 산을 고르면 그 산의 전체 배치가 강조됩니다.
               </p>
               <select id="mountain-select"></select>
               <div id="mountain-chart"></div>
@@ -139,18 +115,16 @@
               <div class="legend">
                 <span><i class="dot dot-ignition"></i>발화 후보지</span>
                 <span><i class="line line-smoke"></i>연기 경로</span>
-                <span><i class="dot dot-cam-top"></i>카메라 상위권</span>
-                <span><i class="dot dot-cam-low"></i>카메라 하위권</span>
-                <span><i class="line line-los"></i>시야 연결선</span>
                 <span><i class="dot dot-sim-point"></i>시뮬레이션 발화점</span>
                 <span><i class="line line-mountain"></i>산 경계</span>
-                <span><i class="dot dot-mountain-cam"></i>그래프 최적 카메라</span>
+                <span><i class="dot dot-mountain-cam"></i>그래프 최적 카메라(선택 산)</span>
+                <span><i class="dot dot-mountain-overview"></i>산별 1순위 카메라</span>
               </div>
             </div>
           </div>
         </section>
 
-        <aside class="sidebar right-sidebar" data-rail="RANKING">
+        <aside class="sidebar right-sidebar" data-rail="SIMULATION">
           <section class="sidebar-card" id="sim-result-wrap" style="display:none;">
             <div class="card-head">
               <div>
@@ -160,28 +134,6 @@
             </div>
             <div id="sim-headline" class="sim-headline"></div>
             <div id="sim-direction-list" class="sim-direction-list"></div>
-          </section>
-
-          <section class="sidebar-card">
-            <div class="card-head">
-              <div>
-                <p class="card-kicker">배치 우선순위</p>
-                <h2>카메라 후보지 랭킹</h2>
-              </div>
-            </div>
-            <div id="ranking-list" class="ranking-list"></div>
-          </section>
-
-          <section class="sidebar-card" id="detail-panel-wrap" style="display:none;">
-            <div class="card-head">
-              <div>
-                <p class="card-kicker" id="detail-kicker">후보지 상세</p>
-                <h2 id="detail-title">-</h2>
-              </div>
-              <div class="score-badge" id="detail-final-score">-</div>
-            </div>
-            <div id="detail-bars" class="score-bars"></div>
-            <div id="detail-reasons" class="reasons-block"></div>
           </section>
         </aside>
       </main>

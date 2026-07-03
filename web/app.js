@@ -1,15 +1,3 @@
-const SCORE_LABELS = {
-  fireRiskCoverage: "산불 위험 커버리지",
-  smokeVisibility: "연기 가시성",
-  opticalReliability: "광학 신뢰도(역광 포함)",
-  maintenanceAccess: "유지보수 접근성",
-  protectedTarget: "보호 대상 중요도",
-  communication: "통신 가능성",
-  powerStability: "전력 안정성",
-  falseAlarmRisk: "오탐 위험",
-  ecologicalRisk: "생태 교란 위험",
-};
-
 const SOURCE_LABELS = {
   fireHistory: "산림청 산불통계",
   asosWind: "기상청 ASOS",
@@ -21,22 +9,19 @@ const SOURCE_LABELS = {
 const DIRECTIONS_16 = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
   "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
 
+const MOUNTAIN_LIST_LIMIT = 40; // 산이 수백~천 단위라 목록은 노드 수 상위 N개만 보여준다
+
 let appState = {
   region: "uiseong",
   data: null,
   map: null,
   layerGroups: {},
-  hour: "14",
-  topN: 80,
-  selectedCameraId: null,
-  visibility: { ignition: true, smoke: true, camera: true, los: false, mountain: true },
+  visibility: { ignition: true, smoke: true, mountain: true },
   simMode: false,
   simSeason: "봄",
   simLoading: false,
   selectedMountainId: null,
 };
-
-const MOUNTAIN_LIST_LIMIT = 40; // 산이 수백~천 단위라 목록은 노드 수 상위 N개만 보여준다
 
 async function init() {
   setupMap();
@@ -55,10 +40,9 @@ function setupMap() {
   appState.layerGroups = {
     ignition: L.layerGroup().addTo(appState.map),
     smoke: L.layerGroup().addTo(appState.map),
-    camera: L.layerGroup().addTo(appState.map),
-    los: L.layerGroup().addTo(appState.map),
-    sim: L.layerGroup().addTo(appState.map),
     mountain: L.layerGroup().addTo(appState.map),
+    mountainOverview: L.layerGroup().addTo(appState.map),
+    sim: L.layerGroup().addTo(appState.map),
   };
 
   appState.map.on("click", (e) => {
@@ -75,28 +59,11 @@ function bindControls() {
     loadRegion(btn.dataset.region);
   });
 
-  document.getElementById("hour-control").addEventListener("click", (e) => {
-    const btn = e.target.closest(".segment");
-    if (!btn) return;
-    setActiveSegment("hour-control", btn);
-    appState.hour = btn.dataset.hour;
-    renderRankingList();
-    if (appState.selectedCameraId) showDetail(appState.selectedCameraId);
-  });
-
   document.querySelectorAll("#layer-toggles input").forEach((input) => {
     input.addEventListener("change", () => {
       appState.visibility[input.dataset.layer] = input.checked;
       applyLayerVisibility();
     });
-  });
-
-  const slider = document.getElementById("top-n-slider");
-  slider.addEventListener("input", () => {
-    appState.topN = Number(slider.value);
-    document.getElementById("top-n-label").textContent = `상위 ${appState.topN}개 표시`;
-    renderCameraLayer();
-    renderRankingList();
   });
 
   document.getElementById("mountain-select").addEventListener("change", (e) => {
@@ -128,25 +95,8 @@ function setActiveSegment(containerId, activeBtn) {
   activeBtn.classList.add("is-active");
 }
 
-function displayScore(camera, key) {
-  if (key === "opticalReliability") {
-    const v = camera.scores.opticalReliabilityByHour[appState.hour];
-    return v === undefined ? camera.scores.opticalReliabilityBaseByHour[appState.hour] ?? 60 : v;
-  }
-  const raw = camera.scores[key];
-  if (raw && typeof raw === "object") return raw.value;
-  return raw;
-}
-
-function isApprox(camera, key) {
-  const raw = camera.scores[key];
-  return !!(raw && typeof raw === "object" && raw.approx);
-}
-
 async function loadRegion(regionKey) {
   appState.region = regionKey;
-  appState.selectedCameraId = null;
-  document.getElementById("detail-panel-wrap").style.display = "none";
   document.getElementById("sim-result-wrap").style.display = "none";
   appState.layerGroups.sim.clearLayers();
   const res = await fetch(`./data/${regionKey}.json`);
@@ -155,15 +105,13 @@ async function loadRegion(regionKey) {
 
   document.getElementById("map-title").textContent = `${data.regionNameKo} · 센서 배치 후보`;
   document.getElementById("region-note").textContent = data.note || "";
-  document.getElementById("top-n-label").textContent = `상위 ${appState.topN}개 표시`;
 
   renderHeroStats(data);
   renderSourceStatus(data);
   renderWindRose(data);
   renderIgnitionLayer();
   renderSmokeLayer();
-  renderCameraLayer();
-  renderRankingList();
+  renderMountainOverviewLayer(data);
   populateMountainSelect(data);
   applyLayerVisibility();
   fitMapToBounds(data.bbox);
@@ -175,12 +123,16 @@ function fitMapToBounds(bbox) {
 }
 
 function renderHeroStats(data) {
-  const topScore = data.cameraCandidates[0]?.scores.final ?? 0;
+  const mountains = data.mountainCoverage || [];
+  const totalCameras = mountains.reduce((sum, m) => sum + m.recommendedCameras.length, 0);
+  const avgWorstCase = mountains.length
+    ? mountains.reduce((sum, m) => sum + (m.recommendedCameras.at(-1)?.worstCaseMin ?? 0), 0) / mountains.length
+    : 0;
   const cards = [
     { value: data.ignitionCandidates.length, label: "발화 후보지" },
-    { value: data.cameraCandidates.length, label: "카메라 후보지" },
-    { value: topScore.toFixed(1), label: "최고 배치 점수" },
-    { value: `${data.wind.avgWindSpeedMs ?? "-"} m/s`, label: "봄철 평균 풍속" },
+    { value: mountains.length, label: "식별된 산 개수" },
+    { value: totalCameras, label: "그래프 추천 카메라 총합" },
+    { value: `${avgWorstCase.toFixed(1)}분`, label: "산 평균 최악 탐지 시간" },
   ];
   document.getElementById("hero-stats").innerHTML = cards
     .map((c) => `<article class="stat-card"><strong>${c.value}</strong><span>${c.label}</span></article>`)
@@ -240,12 +192,6 @@ function riskColor(score) {
   return "#8fd6c1";
 }
 
-function scoreColor(score) {
-  if (score >= 70) return "#4de2b1";
-  if (score >= 50) return "#7fa6bd";
-  return "#97a3ad";
-}
-
 function renderIgnitionLayer() {
   const group = appState.layerGroups.ignition;
   group.clearLayers();
@@ -283,109 +229,18 @@ function renderSmokeLayer() {
   }
 }
 
-function renderCameraLayer() {
-  const group = appState.layerGroups.camera;
-  group.clearLayers();
-  const cameras = appState.data.cameraCandidates.slice(0, appState.topN);
-  for (const cam of cameras) {
-    const color = scoreColor(cam.scores.final);
-    const marker = L.circleMarker([cam.lat, cam.lon], {
-      radius: cam.id === appState.selectedCameraId ? 9 : 6,
-      color,
-      fillColor: color,
-      fillOpacity: 0.75,
-      weight: cam.id === appState.selectedCameraId ? 3 : 1,
-    });
-    marker.bindTooltip(`#${cam.rank} · ${cam.scores.final}`, { direction: "top" });
-    marker.on("click", () => selectCamera(cam.id));
-    marker.addTo(group);
-  }
-}
-
-function renderLosLayer() {
-  const group = appState.layerGroups.los;
-  group.clearLayers();
-  if (!appState.selectedCameraId) return;
-  const cam = appState.data.cameraCandidates.find((c) => c.id === appState.selectedCameraId);
-  if (!cam) return;
-  const ignitionsById = Object.fromEntries(appState.data.ignitionCandidates.map((ig) => [ig.id, ig]));
-  for (const covered of cam.coveredIgnitions) {
-    const ig = ignitionsById[covered.ignitionId];
-    if (!ig) continue;
-    const color = covered.visibilityScore >= 55 ? "#4de2b1" : covered.visibilityScore >= 30 ? "#f6a04d" : "#ff5d5d";
-    L.polyline([[cam.lat, cam.lon], [ig.lat, ig.lon]], {
-      color, weight: 1.5, opacity: 0.7, dashArray: covered.visibilityScore >= 55 ? null : "4,4",
-    }).addTo(group);
-  }
-}
-
 function applyLayerVisibility() {
-  // "sim"에는 토글 체크박스가 없다 - 항상 지도에 붙어 있어야 하므로 이 루프 대상에서 제외한다.
+  // "sim"/"mountainOverview"에는 토글 체크박스가 없다 - 항상 지도에 붙어 있어야
+  // 하므로 이 루프 대상에서 제외한다.
+  const alwaysOn = new Set(["sim", "mountainOverview"]);
   for (const [key, group] of Object.entries(appState.layerGroups)) {
-    if (key === "sim") continue;
+    if (alwaysOn.has(key)) continue;
     if (appState.visibility[key]) {
       if (!appState.map.hasLayer(group)) group.addTo(appState.map);
     } else if (appState.map.hasLayer(group)) {
       appState.map.removeLayer(group);
     }
   }
-}
-
-function renderRankingList() {
-  const cameras = appState.data.cameraCandidates.slice(0, appState.topN);
-  const html = cameras.map((cam) => {
-    const selected = cam.id === appState.selectedCameraId ? "is-selected" : "";
-    return `
-      <div class="ranking-item ${selected}" data-cam-id="${cam.id}">
-        <span class="rank-num">#${cam.rank}</span>
-        <span class="rank-id">${cam.id} · 고도 ${cam.elevation}m</span>
-        <span class="rank-score" style="color:${scoreColor(cam.scores.final)}">${cam.scores.final}</span>
-      </div>`;
-  }).join("");
-  const container = document.getElementById("ranking-list");
-  container.innerHTML = html;
-  container.querySelectorAll(".ranking-item").forEach((el) => {
-    el.addEventListener("click", () => selectCamera(el.dataset.camId));
-  });
-}
-
-function selectCamera(camId) {
-  appState.selectedCameraId = camId;
-  const cam = appState.data.cameraCandidates.find((c) => c.id === camId);
-  if (cam) appState.map.panTo([cam.lat, cam.lon]);
-  renderCameraLayer();
-  renderRankingList();
-  renderLosLayer();
-  showDetail(camId);
-}
-
-function scoreBarRow(label, value, approx) {
-  const pct = Math.max(0, Math.min(100, value));
-  const isRisk = label.includes("위험");
-  return `
-    <div class="score-bar-row">
-      <div class="score-bar-meta">
-        <span>${label}${approx ? '<span class="approx-tag">근사</span>' : ""}</span>
-        <span>${pct.toFixed(1)}</span>
-      </div>
-      <div class="score-track"><div class="score-fill ${isRisk ? "risk" : ""}" style="width:${pct}%"></div></div>
-    </div>`;
-}
-
-function showDetail(camId) {
-  const cam = appState.data.cameraCandidates.find((c) => c.id === camId);
-  if (!cam) return;
-  document.getElementById("detail-panel-wrap").style.display = "block";
-  document.getElementById("detail-title").textContent = `${cam.id} (${cam.rank}위)`;
-  document.getElementById("detail-final-score").textContent = cam.scores.final;
-
-  const bars = Object.keys(SCORE_LABELS).map((key) =>
-    scoreBarRow(SCORE_LABELS[key], displayScore(cam, key), isApprox(cam, key))
-  ).join("");
-  document.getElementById("detail-bars").innerHTML = bars;
-
-  document.getElementById("detail-reasons").innerHTML =
-    cam.reasons.map((r) => `<p>${r}</p>`).join("");
 }
 
 async function runSimulation(lon, lat) {
@@ -501,6 +356,33 @@ function renderSimResult(result) {
       <span>${dir.detected ? `${dir.detectionTimeMin}분 (${dir.detectingCameraId})` : "미탐지"}</span>
     </div>`).join("");
   document.getElementById("sim-direction-list").innerHTML = rows;
+}
+
+function renderMountainOverviewLayer(data) {
+  // 산마다 첫 번째(가장 중요한) 추천 카메라 하나씩 - 전체 지역에 배치가
+  // 실제로 퍼져 있는지 한눈에 보여준다("한 산에만 몰려있나?" 질문에 대한 답).
+  const group = appState.layerGroups.mountainOverview;
+  group.clearLayers();
+  for (const mountain of data.mountainCoverage || []) {
+    const first = mountain.recommendedCameras[0];
+    if (!first) continue;
+    L.circleMarker([first.lat, first.lon], {
+      radius: 4, color: "#c792ea", fillColor: "#c792ea", fillOpacity: 0.55, weight: 1,
+    })
+      .bindTooltip(`${mountain.mountainId} · 노드 ${mountain.nodeCount}개`, { direction: "top" })
+      .on("click", () => {
+        const select = document.getElementById("mountain-select");
+        if (![...select.options].some((o) => o.value === mountain.mountainId)) {
+          const opt = document.createElement("option");
+          opt.value = mountain.mountainId;
+          opt.textContent = `${mountain.mountainId} · 노드 ${mountain.nodeCount}개 · 표고 ${Math.round(mountain.seed.elevation)}m`;
+          select.appendChild(opt);
+        }
+        select.value = mountain.mountainId;
+        selectMountain(mountain.mountainId);
+      })
+      .addTo(group);
+  }
 }
 
 function populateMountainSelect(data) {
