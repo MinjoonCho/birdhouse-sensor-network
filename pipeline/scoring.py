@@ -21,6 +21,38 @@ DEFAULT_HOUR = 14
 CAMERA_MAST_HEIGHT_M = 8.0
 SMOKE_PLUME_HEIGHT_M = 80.0
 MAX_CAMERA_IGNITION_RANGE_M = 7000.0
+DIVERSITY_CELL_SIZE_M = 3000.0
+
+
+def _diversify_by_geography(cameras: list[dict], bbox: tuple[float, float, float, float]) -> list[dict]:
+    """점수만으로 순위를 매기면 발화 후보지가 몰린 한 구역의 카메라들이 상위권을
+    싹쓸이해 그 지역에만 카메라가 몰리는 것처럼 보인다. 지역을 격자로 나눠
+    구역별로 돌아가며 최고점 후보를 뽑아, 상위 N개를 골라도 여러 산에 걸쳐
+    고르게 분포하도록 순서를 재배열한다(개별 최종 점수는 그대로 유지).
+    """
+    lon_min, lat_min, lon_max, lat_max = bbox
+    lat_span_m = haversine_m(lon_min, lat_min, lon_min, lat_max) or 1.0
+    lon_span_m = haversine_m(lon_min, lat_min, lon_max, lat_min) or 1.0
+    n_rows = max(3, min(12, round(lat_span_m / DIVERSITY_CELL_SIZE_M)))
+    n_cols = max(3, min(12, round(lon_span_m / DIVERSITY_CELL_SIZE_M)))
+
+    buckets: dict[tuple[int, int], list[dict]] = {}
+    for cam in cameras:
+        col = min(n_cols - 1, int((cam["lon"] - lon_min) / (lon_max - lon_min + 1e-9) * n_cols))
+        row = min(n_rows - 1, int((cam["lat"] - lat_min) / (lat_max - lat_min + 1e-9) * n_rows))
+        buckets.setdefault((row, col), []).append(cam)
+    for bucket in buckets.values():
+        bucket.sort(key=lambda c: c["scores"]["final"], reverse=True)
+
+    ordered: list[dict] = []
+    while True:
+        active = [b for b in buckets.values() if b]
+        if not active:
+            break
+        active.sort(key=lambda b: b[0]["scores"]["final"], reverse=True)
+        for bucket in active:
+            ordered.append(bucket.pop(0))
+    return ordered
 
 
 def _clamp(v: float, lo: float = 0.0, hi: float = 100.0) -> float:
@@ -300,7 +332,7 @@ def score_cameras(
             "reasons": reasons,
         })
 
-    scored.sort(key=lambda c: c["scores"]["final"], reverse=True)
+    scored = _diversify_by_geography(scored, dem.lonlat_bbox())
     for rank, cam in enumerate(scored, start=1):
         cam["rank"] = rank
     return scored
