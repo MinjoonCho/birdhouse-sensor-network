@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>새집형 산불 조기감지 노드 배치 시뮬레이션</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    >
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <div class="atlas-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Birdhouse Sensor Network · MVP Simulation</p>
+          <h1>새집형 산불 조기감지 노드 배치</h1>
+          <p class="subcopy">발화 후보지가 아니라 연기 경로가 가장 잘 보이는 지점을 찾는 배치 시뮬레이션</p>
+        </div>
+        <div class="topbar-stats" id="hero-stats"></div>
+      </header>
+
+      <main class="atlas-layout">
+        <aside class="sidebar left-sidebar" data-rail="CONTROL">
+          <section class="sidebar-card">
+            <p class="card-kicker">분석 지역</p>
+            <h2>지역 선택</h2>
+            <div class="stack">
+              <div class="segment-control" id="region-control">
+                <button class="segment is-active" data-region="uiseong">의성군</button>
+                <button class="segment" data-region="bonghwa">봉화군</button>
+              </div>
+              <div id="region-note" class="selection-summary"></div>
+            </div>
+          </section>
+
+          <section class="sidebar-card">
+            <p class="card-kicker">발화 지점 시뮬레이션</p>
+            <h2>임의 지점 발화 시뮬레이션</h2>
+            <div class="stack">
+              <p class="selection-summary">
+                산불 기록이 없는 곳도 대비 대상입니다. 계절을 고르고 지도를
+                클릭하면 그 지점에서 불이 났을 때 연기가 어디로 퍼지고
+                몇 분 만에 카메라에 포착될지 계산합니다.
+              </p>
+              <div class="segment-control" id="sim-season-control">
+                <button class="segment is-active" data-season="봄">봄</button>
+                <button class="segment" data-season="여름">여름</button>
+                <button class="segment" data-season="가을">가을</button>
+                <button class="segment" data-season="겨울">겨울</button>
+              </div>
+              <button class="ghost-button" id="sim-toggle-button" type="button">지도 클릭으로 발화 지점 지정</button>
+              <div class="selection-summary" id="sim-status"></div>
+            </div>
+          </section>
+
+          <section class="sidebar-card">
+            <p class="card-kicker">데이터 소스 상태</p>
+            <h2>수집 현황</h2>
+            <div id="source-status" class="source-status-grid"></div>
+          </section>
+
+          <section class="sidebar-card">
+            <p class="card-kicker">시간 조건</p>
+            <h2>봄철(3~5월) 오후 기준</h2>
+            <div class="stack">
+              <label class="control-label">
+                기준 시각 (역광·광학 신뢰도)
+                <div class="segment-control" id="hour-control">
+                  <button class="segment" data-hour="9">09시</button>
+                  <button class="segment" data-hour="12">12시</button>
+                  <button class="segment is-active" data-hour="14">14시</button>
+                  <button class="segment" data-hour="15">15시</button>
+                  <button class="segment" data-hour="18">18시</button>
+                </div>
+              </label>
+            </div>
+          </section>
+
+          <section class="sidebar-card">
+            <p class="card-kicker">지도 레이어</p>
+            <h2>표시 항목</h2>
+            <div class="stack" id="layer-toggles">
+              <label class="toggle-row"><input type="checkbox" data-layer="ignition" checked> 발화 후보지</label>
+              <label class="toggle-row"><input type="checkbox" data-layer="smoke" checked> 연기 이동 경로</label>
+              <label class="toggle-row"><input type="checkbox" data-layer="camera" checked> 카메라 후보지</label>
+              <label class="toggle-row"><input type="checkbox" data-layer="los"> 시야 연결선 (선택 카메라)</label>
+            </div>
+          </section>
+
+          <section class="sidebar-card">
+            <p class="card-kicker">필터</p>
+            <h2>카메라 후보 상위 N</h2>
+            <input type="range" id="top-n-slider" min="10" max="150" step="10" value="80">
+            <div class="selection-summary" id="top-n-label"></div>
+          </section>
+
+          <section class="sidebar-card">
+            <p class="card-kicker">바람 패턴</p>
+            <h2>봄철 오후 풍향 분포</h2>
+            <div id="wind-rose"></div>
+            <div class="selection-summary" id="wind-summary"></div>
+          </section>
+        </aside>
+
+        <section class="map-stage">
+          <div class="map-frame">
+            <div class="map-overlay map-overlay-top">
+              <div>
+                <p class="eyebrow">Operational View</p>
+                <h2 id="map-title">의성군 · 센서 배치 후보</h2>
+              </div>
+              <div class="overlay-note" id="map-summary"></div>
+            </div>
+            <div id="map"></div>
+            <div class="map-overlay map-overlay-bottom">
+              <div class="legend">
+                <span><i class="dot dot-ignition"></i>발화 후보지</span>
+                <span><i class="line line-smoke"></i>연기 경로</span>
+                <span><i class="dot dot-cam-top"></i>카메라 상위권</span>
+                <span><i class="dot dot-cam-low"></i>카메라 하위권</span>
+                <span><i class="line line-los"></i>시야 연결선</span>
+                <span><i class="dot dot-sim-point"></i>시뮬레이션 발화점</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <aside class="sidebar right-sidebar" data-rail="RANKING">
+          <section class="sidebar-card" id="sim-result-wrap" style="display:none;">
+            <div class="card-head">
+              <div>
+                <p class="card-kicker">시뮬레이션 결과</p>
+                <h2 id="sim-result-title">발화 지점 시뮬레이션</h2>
+              </div>
+            </div>
+            <div id="sim-headline" class="sim-headline"></div>
+            <div id="sim-direction-list" class="sim-direction-list"></div>
+          </section>
+
+          <section class="sidebar-card">
+            <div class="card-head">
+              <div>
+                <p class="card-kicker">배치 우선순위</p>
+                <h2>카메라 후보지 랭킹</h2>
+              </div>
+            </div>
+            <div id="ranking-list" class="ranking-list"></div>
+          </section>
+
+          <section class="sidebar-card" id="detail-panel-wrap" style="display:none;">
+            <div class="card-head">
+              <div>
+                <p class="card-kicker" id="detail-kicker">후보지 상세</p>
+                <h2 id="detail-title">-</h2>
+              </div>
+              <div class="score-badge" id="detail-final-score">-</div>
+            </div>
+            <div id="detail-bars" class="score-bars"></div>
+            <div id="detail-reasons" class="reasons-block"></div>
+          </section>
+        </aside>
+      </main>
+    </div>
+
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
+    <script src="./app.js"></script>
+  </body>
+</html>
