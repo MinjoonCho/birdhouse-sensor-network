@@ -89,8 +89,9 @@
             <div class="stack" id="layer-toggles">
               <label class="toggle-row"><input type="checkbox" data-layer="ignition" checked> 발화 후보지</label>
               <label class="toggle-row"><input type="checkbox" data-layer="smoke" checked> 연기 이동 경로</label>
-              <label class="toggle-row"><input type="checkbox" data-layer="camera" checked> 카메라 후보지</label>
+              <label class="toggle-row"><input type="checkbox" data-layer="camera" checked> 카메라 후보지(휴리스틱)</label>
               <label class="toggle-row"><input type="checkbox" data-layer="los"> 시야 연결선 (선택 카메라)</label>
+              <label class="toggle-row"><input type="checkbox" data-layer="mountain" checked> 산별 최소 카메라 배치</label>
             </div>
           </section>
 
@@ -99,6 +100,21 @@
             <h2>카메라 후보 상위 N</h2>
             <input type="range" id="top-n-slider" min="10" max="150" step="10" value="80">
             <div class="selection-summary" id="top-n-label"></div>
+          </section>
+
+          <section class="sidebar-card">
+            <p class="card-kicker">그래프 최적화</p>
+            <h2>산별 최소 카메라 배치</h2>
+            <div class="stack">
+              <p class="selection-summary">
+                산마다 격자로 나눠 화재 확산(경사 가중)을 시뮬레이션하고,
+                최악의 탐지 시간이 최소가 되는 카메라 배치를 greedy k-center로
+                계산했습니다. 센서 사거리 500m~1km, 목표 20분 기준입니다.
+              </p>
+              <select id="mountain-select"></select>
+              <div id="mountain-chart"></div>
+              <div class="selection-summary" id="mountain-summary"></div>
+            </div>
           </section>
 
           <section class="sidebar-card">
@@ -127,6 +143,8 @@
                 <span><i class="dot dot-cam-low"></i>카메라 하위권</span>
                 <span><i class="line line-los"></i>시야 연결선</span>
                 <span><i class="dot dot-sim-point"></i>시뮬레이션 발화점</span>
+                <span><i class="line line-mountain"></i>산 경계</span>
+                <span><i class="dot dot-mountain-cam"></i>그래프 최적 카메라</span>
               </div>
             </div>
           </div>

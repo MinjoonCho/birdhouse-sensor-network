@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from . import candidates, config, scoring, smoke_paths
+from . import camera_placement, candidates, config, fire_graph, mountains, scoring, smoke_paths
 from .dem import load_region_dem
 from .sources import air_quality, asos, fire_history, vworld_wfs
 
@@ -45,6 +45,13 @@ def run_region(region_key: str, log=print) -> dict:
         wind_data, fire_summary, air_quality_data, vworld_layers,
     )
 
+    log(f"[{region_key}] 산불 확산 그래프 구성...")
+    graph = fire_graph.build_fire_graph(dem)
+    mountain_list = mountains.segment_mountains(dem, graph.coords)
+
+    log(f"[{region_key}] 산별 최소 카메라 배치(greedy k-center)...")
+    mountain_coverage = camera_placement.place_cameras_all_mountains(graph, mountain_list)
+
     source_status = {
         "fireHistory": fire_summary["source"],
         "asosWind": wind_data["source"],
@@ -68,4 +75,5 @@ def run_region(region_key: str, log=print) -> dict:
         "ignitionCandidates": ignition_candidates,
         "cameraCandidates": scored_cameras,
         "smokePaths": paths,
+        "mountainCoverage": mountain_coverage,
     }

@@ -15,9 +15,11 @@ from .sources import trails
 GRID_STEP_M = 450.0
 CAMERA_GRID_STEP_M = 220.0
 NEIGHBOR_RADIUS_M = 400.0
-CAMERA_PROMINENCE_MIN = 0.7
-CAMERA_SHORTLIST_CAP = 600
-CAMERA_DEDUPE_MIN_DIST_M = 420.0
+CAMERA_PROMINENCE_MIN = 0.55  # 짧은 탐지 거리에서는 압도적 봉우리가 아니어도 발화지 근처면 유효하다
+# 센서 실측 탐지 거리가 500m~1km라서, 그 범위가 서로 이어지도록 후보 간격을
+# 좁히고 개수를 크게 늘린다(기존 150개는 봉우리 전망 위주 카메라 가정 때 값).
+CAMERA_SHORTLIST_CAP = 1400
+CAMERA_DEDUPE_MIN_DIST_M = 280.0
 
 
 def _deg_steps(dem: RegionDEM, step_m: float) -> tuple[float, float, float]:
@@ -142,10 +144,16 @@ def generate_ignition_candidates(dem: RegionDEM, fire_summary: dict, top_n: int 
     return candidates
 
 
-def generate_camera_candidates(dem: RegionDEM, ignition_candidates: list[dict], top_n: int = 150) -> list[dict]:
-    """산마다 새집 후보가 하나씩 돌아가도록, 촘촘한 격자로 지역 내 거의 모든
-    두드러진 봉우리/능선을 찾아낸 뒤 근접 조건으로 보정한다. 발화 후보지에서
-    멀다는 이유만으로 후보에서 완전히 배제하지 않는다(멀리 있는 산도 커버 대상).
+CAMERA_IGNITION_PROXIMITY_CAP_M = 2500.0  # 이 거리를 넘으면 근접도 가점 0
+
+
+def generate_camera_candidates(dem: RegionDEM, ignition_candidates: list[dict], top_n: int = 450) -> list[dict]:
+    """센서 실측 탐지 거리가 500m~1km이므로, "얼마나 두드러진 봉우리인가"만으로
+    고르면 정작 발화 후보지 근처에는 센서가 하나도 없는 경우가 생긴다. 그래서
+    1차 선별 단계부터 두드러짐과 발화 후보지 근접도를 함께 반영해, 조금 낮은
+    언덕이라도 실제 발화 위험 지역 근처에 있으면 살아남도록 한다. 지역 전체
+    분포(어느 한쪽에 몰리지 않게)는 이후 scoring.py의 지리적 다양화 단계에서
+    별도로 보장한다.
     """
     points = _grid_points(dem, CAMERA_GRID_STEP_M)
     prelim = []
@@ -156,32 +164,27 @@ def generate_camera_candidates(dem: RegionDEM, ignition_candidates: list[dict], 
         prominence = _local_prominence(dem, lon, lat, elevation, NEIGHBOR_RADIUS_M)
         if prominence < CAMERA_PROMINENCE_MIN:
             continue
-        prelim.append({"lon": lon, "lat": lat, "elevation": elevation, "prominence": prominence})
+        nearest_ignition_m = min(
+            (_haversine_m(lon, lat, ig["lon"], ig["lat"]) for ig in ignition_candidates),
+            default=None,
+        )
+        proximity = max(0.0, 1 - (nearest_ignition_m or 1e9) / CAMERA_IGNITION_PROXIMITY_CAP_M)
+        combined = 0.5 * prominence + 0.5 * proximity
+        prelim.append({"lon": lon, "lat": lat, "elevation": elevation, "prominence": prominence,
+                        "nearestIgnitionM": nearest_ignition_m, "combined": combined})
 
-    # 두드러짐(봉우리다움) 순서를 최우선으로 둬서, 발화 후보지와 멀어도
-    # 지역 곳곳의 실제 산봉우리가 먼저 뽑히도록 한다.
-    prelim.sort(key=lambda p: (p["prominence"], p["elevation"]), reverse=True)
+    # 두드러짐과 발화 후보지 근접도를 함께 봐서 1차 후보군을 추린다.
+    prelim.sort(key=lambda p: p["combined"], reverse=True)
     shortlist = prelim[:CAMERA_SHORTLIST_CAP]
 
     for p in shortlist:
         dist = trails.nearest_trail_distance_m(dem.region_key, p["lon"], p["lat"])
         p["trailDistanceM"] = dist
-        nearest_ignition_m = min(
-            (_haversine_m(p["lon"], p["lat"], ig["lon"], ig["lat"]) for ig in ignition_candidates),
-            default=None,
-        )
-        p["nearestIgnitionM"] = nearest_ignition_m
-        access_ok = dist is not None and dist <= 1500
-        range_ok = nearest_ignition_m is not None and nearest_ignition_m <= 7000
-        p["prefilterScore"] = (
-            p["prominence"] * 40
-            + (30 if access_ok else 0)
-            + (30 if range_ok else 0)
-        )
+        proximity_score = max(0.0, 1 - (p["nearestIgnitionM"] or 1e9) / 2000.0) * 50
+        access_score = max(0.0, 1 - (dist or 1e9) / 1500.0) * 25
+        p["prefilterScore"] = proximity_score + access_score + p["prominence"] * 25
 
-    # 산악 커버리지가 우선 목표이므로 두드러짐 순서로 먼저 골고루 골라내고,
-    # 동률일 때만 접근성/발화후보 근접도로 우선순위를 매긴다.
-    shortlist.sort(key=lambda p: (p["prominence"], p["prefilterScore"]), reverse=True)
+    shortlist.sort(key=lambda p: p["prefilterScore"], reverse=True)
     deduped = _dedupe_by_distance(shortlist, min_dist_m=CAMERA_DEDUPE_MIN_DIST_M)[:top_n]
 
     candidates = []

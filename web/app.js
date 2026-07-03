@@ -29,11 +29,14 @@ let appState = {
   hour: "14",
   topN: 80,
   selectedCameraId: null,
-  visibility: { ignition: true, smoke: true, camera: true, los: false },
+  visibility: { ignition: true, smoke: true, camera: true, los: false, mountain: true },
   simMode: false,
   simSeason: "봄",
   simLoading: false,
+  selectedMountainId: null,
 };
+
+const MOUNTAIN_LIST_LIMIT = 40; // 산이 수백~천 단위라 목록은 노드 수 상위 N개만 보여준다
 
 async function init() {
   setupMap();
@@ -55,6 +58,7 @@ function setupMap() {
     camera: L.layerGroup().addTo(appState.map),
     los: L.layerGroup().addTo(appState.map),
     sim: L.layerGroup().addTo(appState.map),
+    mountain: L.layerGroup().addTo(appState.map),
   };
 
   appState.map.on("click", (e) => {
@@ -93,6 +97,10 @@ function bindControls() {
     document.getElementById("top-n-label").textContent = `상위 ${appState.topN}개 표시`;
     renderCameraLayer();
     renderRankingList();
+  });
+
+  document.getElementById("mountain-select").addEventListener("change", (e) => {
+    selectMountain(e.target.value);
   });
 
   document.getElementById("sim-season-control").addEventListener("click", (e) => {
@@ -156,6 +164,7 @@ async function loadRegion(regionKey) {
   renderSmokeLayer();
   renderCameraLayer();
   renderRankingList();
+  populateMountainSelect(data);
   applyLayerVisibility();
   fitMapToBounds(data.bbox);
 }
@@ -492,6 +501,74 @@ function renderSimResult(result) {
       <span>${dir.detected ? `${dir.detectionTimeMin}분 (${dir.detectingCameraId})` : "미탐지"}</span>
     </div>`).join("");
   document.getElementById("sim-direction-list").innerHTML = rows;
+}
+
+function populateMountainSelect(data) {
+  const select = document.getElementById("mountain-select");
+  const mountains = (data.mountainCoverage || []);
+  const top = mountains.slice(0, MOUNTAIN_LIST_LIMIT);
+  select.innerHTML = top.map((m) =>
+    `<option value="${m.mountainId}">${m.mountainId} · 노드 ${m.nodeCount}개 · 표고 ${Math.round(m.seed.elevation)}m</option>`
+  ).join("");
+  if (top.length) {
+    select.value = top[0].mountainId;
+    selectMountain(top[0].mountainId);
+  } else {
+    document.getElementById("mountain-chart").innerHTML = "";
+    document.getElementById("mountain-summary").textContent = "이 지역에서 식별된 산이 없습니다.";
+    appState.layerGroups.mountain.clearLayers();
+  }
+}
+
+function selectMountain(mountainId) {
+  appState.selectedMountainId = mountainId;
+  const mountain = (appState.data.mountainCoverage || []).find((m) => m.mountainId === mountainId);
+  if (!mountain) return;
+
+  renderMountainLayer(mountain);
+  renderMountainChart(mountain);
+
+  const [west, south, east, north] = mountain.bbox;
+  appState.map.flyToBounds([[south, west], [north, east]], { padding: [60, 60], maxZoom: 15, duration: 0.6 });
+}
+
+function renderMountainLayer(mountain) {
+  const group = appState.layerGroups.mountain;
+  group.clearLayers();
+
+  if (mountain.hull && mountain.hull.length >= 3) {
+    L.polygon(mountain.hull.map(([lo, la]) => [la, lo]), {
+      color: "#7fa6bd", weight: 1.5, fillColor: "#7fa6bd", fillOpacity: 0.08, dashArray: "4,3",
+    }).addTo(group);
+  }
+
+  mountain.recommendedCameras.forEach((cam) => {
+    L.circleMarker([cam.lat, cam.lon], {
+      radius: 7, color: "#c792ea", fillColor: "#c792ea", fillOpacity: 0.85, weight: 2,
+    })
+      .bindTooltip(`#${cam.order} · 이 카메라까지 놓으면 최악 ${cam.worstCaseMin ?? "-"}분`, { direction: "top" })
+      .addTo(group);
+  });
+}
+
+function renderMountainChart(mountain) {
+  const cams = mountain.recommendedCameras;
+  const maxTime = Math.max(1, ...cams.map((c) => c.worstCaseMin ?? 0));
+  const rows = cams.map((c) => {
+    const pct = maxTime ? ((c.worstCaseMin ?? 0) / maxTime) * 100 : 0;
+    return `
+      <div class="mountain-chart-row">
+        <span>#${c.order}</span>
+        <div class="mountain-chart-bar-track"><div class="mountain-chart-bar-fill" style="width:${pct}%"></div></div>
+        <span>${c.worstCaseMin ?? "-"}분</span>
+      </div>`;
+  }).join("");
+  document.getElementById("mountain-chart").innerHTML = rows;
+
+  const last = cams[cams.length - 1];
+  document.getElementById("mountain-summary").textContent =
+    `${mountain.mountainId} (노드 ${mountain.nodeCount}개, 표고 ${Math.round(mountain.seed.elevation)}m): ` +
+    `카메라 ${cams.length}개로 최악 탐지 시간을 ${last.worstCaseMin ?? 0}분까지 줄일 수 있습니다.`;
 }
 
 init();
