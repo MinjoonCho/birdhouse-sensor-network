@@ -311,7 +311,9 @@ function renderLosLayer() {
 }
 
 function applyLayerVisibility() {
+  // "sim"에는 토글 체크박스가 없다 - 항상 지도에 붙어 있어야 하므로 이 루프 대상에서 제외한다.
   for (const [key, group] of Object.entries(appState.layerGroups)) {
+    if (key === "sim") continue;
     if (appState.visibility[key]) {
       if (!appState.map.hasLayer(group)) group.addTo(appState.map);
     } else if (appState.map.hasLayer(group)) {
