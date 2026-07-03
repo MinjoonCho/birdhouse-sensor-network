@@ -14,7 +14,8 @@ from .smoke_paths import generate_smoke_paths
 
 CAMERA_MAST_HEIGHT_M = 8.0
 SMOKE_PLUME_HEIGHT_M = 80.0
-CAMERA_RANGE_FOR_SIM_M = 15000.0  # 능선 위 카메라 기준 연기 기둥 관측 가능 거리 가정치
+MAX_SENSOR_RANGE_M = 1000.0  # 새집형 센서 실측 탐지 거리(500m~1km) 상한
+PLUME_GROWTH_M_PER_MIN = 25.0  # 연기가 시간이 지날수록 옆으로 번져 탐지 반경도 넓어진다는 가정치
 VISIBLE_THRESHOLD = 50.0
 DETECTION_LATENCY_MIN = 3.0  # 카메라 스캔 주기 + 연기 판별 처리 지연 가정치
 
@@ -33,9 +34,9 @@ def simulate_ignition(
     synthetic = {"id": "sim", "lon": lon, "lat": lat}
     paths = generate_smoke_paths([synthetic], wind_rose, wind_speed, min_prob_pct=min_prob_pct)
 
-    # 지점 인근 카메라만 검사해 계산량을 줄인다. 경로 끝점(최대 2.5km)에서도
-    # 사정거리 안에 들 수 있는 카메라까지 여유를 두고 미리 추린다.
-    prefilter_radius_m = CAMERA_RANGE_FOR_SIM_M + 3000.0
+    # 지점 인근 카메라만 검사해 계산량을 줄인다. 경로 끝점(최대 2.5km)과
+    # 그 시점까지 넓어진 탐지 반경까지 여유를 두고 미리 추린다.
+    prefilter_radius_m = MAX_SENSOR_RANGE_M + 5000.0
     nearby_cameras = [
         cam for cam in camera_candidates
         if haversine_m(lon, lat, cam["lon"], cam["lat"]) <= prefilter_radius_m
@@ -58,9 +59,14 @@ def simulate_ignition(
             elapsed_min = round(cumulative_dist / max(wind_speed, 0.3) / 60, 1)
             timed_points.append([plon, plat, elapsed_min])
 
+            # 연기가 퍼진 시간만큼 유효 탐지 반경도 넓어진다고 본다 - 발화 지점
+            # 자체가 아니라, 시간이 지나며 번진 연기가 언제 센서 사정거리 안에
+            # 들어오는지를 찾는 것이 핵심이다.
+            effective_range_m = MAX_SENSOR_RANGE_M + PLUME_GROWTH_M_PER_MIN * elapsed_min
+
             best_score, best_cam = 0.0, None
             for cam in nearby_cameras:
-                if haversine_m(cam["lon"], cam["lat"], plon, plat) > CAMERA_RANGE_FOR_SIM_M:
+                if haversine_m(cam["lon"], cam["lat"], plon, plat) > effective_range_m:
                     continue
                 result = line_of_sight(
                     dem, (cam["lon"], cam["lat"]), CAMERA_MAST_HEIGHT_M,
@@ -110,7 +116,13 @@ def simulate_ignition(
         "assumptions": {
             "visibleThreshold": VISIBLE_THRESHOLD,
             "detectionLatencyMin": DETECTION_LATENCY_MIN,
-            "note": "탐지 지연은 카메라 스캔 주기+연기 판별 처리 시간에 대한 가정치(고정 3분)이며, "
-                    "실제 장비 사양이 정해지면 조정이 필요합니다.",
+            "sensorRangeM": MAX_SENSOR_RANGE_M,
+            "plumeGrowthMPerMin": PLUME_GROWTH_M_PER_MIN,
+            "note": "센서 탐지 거리는 500m~1km 가정. 연기가 퍼질수록(분당 "
+                    f"{PLUME_GROWTH_M_PER_MIN}m) 유효 탐지 반경이 넓어진다고 보고, "
+                    "발화 지점이 아니라 시간에 따라 번진 연기가 반경 안에 들어오는 "
+                    "시점을 탐지 시각으로 계산합니다. 탐지 지연 3분은 카메라 스캔 "
+                    "주기+연기 판별 처리 시간 가정치이며, 실제 장비 사양이 정해지면 "
+                    "조정이 필요합니다.",
         },
     }

@@ -186,15 +186,15 @@ def load_region_dem(region_key: str) -> RegionDEM:
 
 EARTH_RADIUS_CORRECTION = 1.0 / (2 * 6371000.0) * 0.87  # 지구 곡률 - 대기굴절 보정(표준값 k=0.13)
 
-_DECAY_NEAR_M = 3000.0
-_DECAY_FAR_M = 18000.0
+_DECAY_NEAR_M = 400.0
+_DECAY_FAR_M = 1000.0
 _DECAY_FAR_FACTOR = 0.35
 
 
 def _distance_decay(dist_m: float) -> float:
-    """연기 기둥은 멀수록 화면에서 작아지고 대기 흐림(haze)의 영향을 더 받아
-    같은 지형 개방도라도 원거리일수록 실제 식별 신뢰도가 떨어진다.
-    3km 이내는 감쇠 없음, 18km 이상은 35%까지 선형 감쇠."""
+    """새집형 센서의 실측 탐지 거리는 500m~1km 수준이다. 400m 이내는 감쇠
+    없음, 1km에 가까워질수록 35%까지 선형 감쇠(그 이상은 상위 range 상수에서
+    아예 차단)."""
     if dist_m <= _DECAY_NEAR_M:
         return 1.0
     if dist_m >= _DECAY_FAR_M:

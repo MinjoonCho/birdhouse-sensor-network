@@ -20,7 +20,9 @@ REPRESENTATIVE_HOURS = [9, 12, 14, 15, 18]
 DEFAULT_HOUR = 14
 CAMERA_MAST_HEIGHT_M = 8.0
 SMOKE_PLUME_HEIGHT_M = 80.0
-MAX_CAMERA_IGNITION_RANGE_M = 15000.0  # 능선 위 카메라에서 연기 기둥은 수 km~수십 km 밖에서도 보임
+MAX_SENSOR_RANGE_M = 1000.0  # 새집형 센서 실측 탐지 거리(500m~1km) 상한
+PLUME_GROWTH_M_PER_MIN = 25.0  # simulate.py와 동일한 가정치(연기 확산에 따른 유효 반경 증가)
+PREFILTER_BUFFER_M = 5000.0  # 경로 길이(최대 2.5km) + 확산 여유를 감안한 사전 필터 반경
 DIVERSITY_CELL_SIZE_M = 3000.0
 
 
@@ -204,20 +206,22 @@ def score_cameras(
     rep_date = dt.date.fromisoformat(sample_day["date"]) if sample_day else dt.date.today()
 
     vworld_available = any(layer.get("available") for layer in vworld_layers.values())
+    wind_speed = wind_data.get("avgWindSpeedMs") or 2.0
+    prefilter_radius_m = MAX_SENSOR_RANGE_M + PREFILTER_BUFFER_M
 
     scored = []
     for cam in camera_candidates:
         covered = []
         for ig in ignition_candidates:
             dist = haversine_m(cam["lon"], cam["lat"], ig["lon"], ig["lat"])
-            if dist > MAX_CAMERA_IGNITION_RANGE_M:
+            if dist > prefilter_radius_m:
                 continue
             paths = paths_by_ignition.get(ig["id"], [])
             if not paths:
                 direct = line_of_sight(
                     dem, (cam["lon"], cam["lat"]), CAMERA_MAST_HEIGHT_M,
                     (ig["lon"], ig["lat"]), SMOKE_PLUME_HEIGHT_M,
-                )
+                ) if dist <= MAX_SENSOR_RANGE_M else {"score": 0.0}
                 covered.append({"ignitionId": ig["id"], "riskScore": ig["riskScore"],
                                  "visibilityScore": direct["score"], "topPaths": []})
                 continue
@@ -226,9 +230,18 @@ def score_cameras(
             weighted_sum = 0.0
             top_paths = []
             for path in paths:
-                sample_points = path["points"][::2] or path["points"]
+                # 발화지점 자체가 아니라, 시간이 지나며 번진 연기가 센서 사정거리
+                # (500m~1km, 확산에 따라 점점 넓어짐) 안에 들어오는지를 본다.
+                sample_points = path["points"][::2]
+                n_total = len(path["points"])
                 los_scores = []
-                for lon, lat in sample_points:
+                for idx, (lon, lat) in enumerate(sample_points):
+                    point_dist_m = path["lengthM"] * (2 * idx + 1) / n_total
+                    elapsed_min = point_dist_m / max(wind_speed, 0.3) / 60
+                    effective_range_m = MAX_SENSOR_RANGE_M + PLUME_GROWTH_M_PER_MIN * elapsed_min
+                    if haversine_m(cam["lon"], cam["lat"], lon, lat) > effective_range_m:
+                        los_scores.append(0.0)
+                        continue
                     result = line_of_sight(
                         dem, (cam["lon"], cam["lat"]), CAMERA_MAST_HEIGHT_M,
                         (lon, lat), SMOKE_PLUME_HEIGHT_M,
