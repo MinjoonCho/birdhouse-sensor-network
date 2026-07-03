@@ -328,6 +328,36 @@ input[type="range"] {
 
 .dot-sim-point { background: #ffe14d; border: 1px solid #1a1208; }
 
+.sim-pulse-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: rgba(255, 225, 77, 0.35);
+  border: 2px solid #ffe14d;
+  animation: sim-pulse 1s ease-out infinite;
+}
+
+@keyframes sim-pulse {
+  0% { transform: scale(0.5); opacity: 1; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+
+.sim-time-label {
+  background: rgba(19, 24, 29, 0.92);
+  border: 1px solid var(--line-strong);
+  color: var(--ink);
+  font-size: 0.7rem;
+  font-family: "Space Grotesk", monospace;
+  padding: 1px 5px;
+  border-radius: 2px;
+  white-space: nowrap;
+}
+
+.sim-time-label.detect {
+  border-color: var(--good);
+  color: var(--good);
+}
+
 .selection-summary {
   font-size: 0.82rem;
   line-height: 1.5;

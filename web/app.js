@@ -386,8 +386,9 @@ async function runSimulation(lon, lat) {
 
   const group = appState.layerGroups.sim;
   group.clearLayers();
-  L.circleMarker([lat, lon], {
-    radius: 8, color: "#ffe14d", fillColor: "#ffe14d", fillOpacity: 0.9, weight: 2,
+  const pulseMarker = L.marker([lat, lon], {
+    icon: L.divIcon({ className: "", html: '<div class="sim-pulse-icon"></div>', iconSize: [22, 22], iconAnchor: [11, 11] }),
+    interactive: false,
   }).addTo(group);
 
   try {
@@ -399,6 +400,7 @@ async function runSimulation(lon, lat) {
     if (!res.ok) {
       statusEl.textContent = result.message || "이 지점은 시뮬레이션할 수 없습니다(범위 밖일 수 있음).";
       document.getElementById("sim-result-wrap").style.display = "none";
+      group.clearLayers();
       return;
     }
     renderSimResult(result);
@@ -407,21 +409,64 @@ async function runSimulation(lon, lat) {
     statusEl.textContent = "시뮬레이션 요청에 실패했습니다.";
   } finally {
     appState.simLoading = false;
+    group.removeLayer(pulseMarker);
   }
 }
 
 function renderSimResult(result) {
   const group = appState.layerGroups.sim;
+  const originLatLng = [result.point.lat, result.point.lon];
+  const boundsPoints = [originLatLng];
+
+  L.circleMarker(originLatLng, {
+    radius: 8, color: "#ffe14d", fillColor: "#ffe14d", fillOpacity: 0.9, weight: 2,
+  }).bindTooltip("시뮬레이션 발화점", { permanent: false }).addTo(group);
+
   for (const dir of result.directions) {
-    const latlngs = [[result.point.lat, result.point.lon], ...dir.points.map(([lo, la]) => [la, lo])];
+    const latlngs = [originLatLng, ...dir.points.map(([lo, la]) => [la, lo])];
+    boundsPoints.push(...latlngs);
     const color = dir.detected ? "#4de2b1" : "#ff5d5d";
-    const weight = 1 + dir.probabilityPct / 6;
-    L.polyline(latlngs, { color, weight, opacity: 0.4 + Math.min(0.5, dir.probabilityPct / 30), dashArray: dir.detected ? null : "5,5" })
+    const weight = 1.5 + dir.probabilityPct / 5;
+    L.polyline(latlngs, {
+      color, weight, opacity: 0.55 + Math.min(0.4, dir.probabilityPct / 30),
+      dashArray: dir.detected ? null : "6,5",
+    })
       .bindTooltip(
         `${dir.direction} (${dir.probabilityPct}%) · ${dir.detected ? `${dir.detectionTimeMin}분 후 ${dir.detectingCameraId} 탐지` : "탐지 실패"}`,
         { sticky: true }
       )
       .addTo(group);
+
+    // 경로 끝점에 경과 시간을 표시해 "얼마나 퍼졌는지"를 지도에서 바로 보이게 한다.
+    const lastPoint = dir.points[dir.points.length - 1];
+    if (lastPoint) {
+      const [endLon, endLat, elapsedMin] = lastPoint;
+      L.marker([endLat, endLon], {
+        icon: L.divIcon({
+          className: "",
+          html: `<div class="sim-time-label">${dir.direction} · ${elapsedMin}분 시점</div>`,
+          iconSize: null,
+        }),
+        interactive: false,
+      }).addTo(group);
+    }
+
+    if (dir.detected && dir.detectingPoint) {
+      const [dLon, dLat] = dir.detectingPoint;
+      L.marker([dLat, dLon], {
+        icon: L.divIcon({
+          className: "",
+          html: `<div class="sim-time-label detect">${dir.detectionTimeMin}분 · ${dir.detectingCameraId} 탐지</div>`,
+          iconSize: null,
+        }),
+        interactive: false,
+      }).addTo(group);
+      L.circleMarker([dLat, dLon], { radius: 5, color: "#4de2b1", fillColor: "#4de2b1", fillOpacity: 0.9, weight: 2 }).addTo(group);
+    }
+  }
+
+  if (boundsPoints.length > 1) {
+    appState.map.flyToBounds(L.latLngBounds(boundsPoints), { padding: [80, 80], maxZoom: 14, duration: 0.6 });
   }
 
   document.getElementById("sim-result-wrap").style.display = "block";

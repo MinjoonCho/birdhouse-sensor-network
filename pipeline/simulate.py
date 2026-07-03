@@ -14,7 +14,7 @@ from .smoke_paths import generate_smoke_paths
 
 CAMERA_MAST_HEIGHT_M = 8.0
 SMOKE_PLUME_HEIGHT_M = 80.0
-CAMERA_RANGE_FOR_SIM_M = 7000.0
+CAMERA_RANGE_FOR_SIM_M = 15000.0  # 능선 위 카메라 기준 연기 기둥 관측 가능 거리 가정치
 VISIBLE_THRESHOLD = 50.0
 DETECTION_LATENCY_MIN = 3.0  # 카메라 스캔 주기 + 연기 판별 처리 지연 가정치
 
@@ -33,10 +33,12 @@ def simulate_ignition(
     synthetic = {"id": "sim", "lon": lon, "lat": lat}
     paths = generate_smoke_paths([synthetic], wind_rose, wind_speed, min_prob_pct=min_prob_pct)
 
-    # 지점 인근 카메라만 검사해 계산량을 줄인다.
+    # 지점 인근 카메라만 검사해 계산량을 줄인다. 경로 끝점(최대 2.5km)에서도
+    # 사정거리 안에 들 수 있는 카메라까지 여유를 두고 미리 추린다.
+    prefilter_radius_m = CAMERA_RANGE_FOR_SIM_M + 3000.0
     nearby_cameras = [
         cam for cam in camera_candidates
-        if haversine_m(lon, lat, cam["lon"], cam["lat"]) <= CAMERA_RANGE_FOR_SIM_M * 1.6
+        if haversine_m(lon, lat, cam["lon"], cam["lat"]) <= prefilter_radius_m
     ]
 
     directions = []
@@ -47,10 +49,14 @@ def simulate_ignition(
         detect_time_min = None
         detect_camera = None
         detect_score = None
+        detect_point = None
+        timed_points = []
 
         for plon, plat in path["points"]:
             cumulative_dist += haversine_m(prev_lon, prev_lat, plon, plat)
             prev_lon, prev_lat = plon, plat
+            elapsed_min = round(cumulative_dist / max(wind_speed, 0.3) / 60, 1)
+            timed_points.append([plon, plat, elapsed_min])
 
             best_score, best_cam = 0.0, None
             for cam in nearby_cameras:
@@ -63,22 +69,24 @@ def simulate_ignition(
                 if result["score"] > best_score:
                     best_score, best_cam = result["score"], cam["id"]
 
-            if best_score >= VISIBLE_THRESHOLD:
+            if best_score >= VISIBLE_THRESHOLD and not detected:
                 detected = True
-                detect_time_min = round(cumulative_dist / max(wind_speed, 0.3) / 60 + DETECTION_LATENCY_MIN, 1)
+                detect_time_min = round(elapsed_min + DETECTION_LATENCY_MIN, 1)
                 detect_camera = best_cam
                 detect_score = round(best_score, 1)
+                detect_point = [plon, plat]
                 break
 
         directions.append({
             "direction": path["fromDirection"],
             "probabilityPct": path["probabilityPct"],
             "lengthM": path["lengthM"],
-            "points": path["points"],
+            "points": timed_points,
             "detected": detected,
             "detectionTimeMin": detect_time_min,
             "detectingCameraId": detect_camera,
             "visibilityScoreAtDetect": detect_score,
+            "detectingPoint": detect_point,
         })
 
     directions.sort(key=lambda d: d["probabilityPct"], reverse=True)

@@ -186,6 +186,22 @@ def load_region_dem(region_key: str) -> RegionDEM:
 
 EARTH_RADIUS_CORRECTION = 1.0 / (2 * 6371000.0) * 0.87  # 지구 곡률 - 대기굴절 보정(표준값 k=0.13)
 
+_DECAY_NEAR_M = 3000.0
+_DECAY_FAR_M = 18000.0
+_DECAY_FAR_FACTOR = 0.35
+
+
+def _distance_decay(dist_m: float) -> float:
+    """연기 기둥은 멀수록 화면에서 작아지고 대기 흐림(haze)의 영향을 더 받아
+    같은 지형 개방도라도 원거리일수록 실제 식별 신뢰도가 떨어진다.
+    3km 이내는 감쇠 없음, 18km 이상은 35%까지 선형 감쇠."""
+    if dist_m <= _DECAY_NEAR_M:
+        return 1.0
+    if dist_m >= _DECAY_FAR_M:
+        return _DECAY_FAR_FACTOR
+    t = (dist_m - _DECAY_NEAR_M) / (_DECAY_FAR_M - _DECAY_NEAR_M)
+    return 1.0 - t * (1.0 - _DECAY_FAR_FACTOR)
+
 
 def line_of_sight(
     dem: RegionDEM,
@@ -237,6 +253,7 @@ def line_of_sight(
         score = max(0.0, min(100.0, 50.0 + min_clearance / max(1.0, dist * 0.02) * 10.0))
     else:
         score = max(0.0, 40.0 + min_clearance)  # 음수 clearance일수록 감점
+    score *= _distance_decay(dist)
 
     return {
         "visible": visible,
