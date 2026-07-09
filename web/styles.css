@@ -267,6 +267,17 @@ input[type="range"] {
   width: 100%;
 }
 
+input[type="number"],
+input[type="text"] {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: #12171b;
+  color: var(--ink);
+  font: inherit;
+}
+
 .ghost-button {
   border: 1px solid var(--line);
   border-radius: 2px;

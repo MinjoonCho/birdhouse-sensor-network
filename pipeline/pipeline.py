@@ -3,10 +3,22 @@
 from __future__ import annotations
 
 import datetime as dt
+import pickle
 
 from . import camera_placement, candidates, config, fire_graph, mountains, smoke_paths
 from .dem import load_region_dem
 from .sources import air_quality, asos, fire_history, vworld_wfs
+
+GRAPH_CACHE_DIR = config.CACHE_DIR / "graph"
+
+
+def _cache_graph_and_mountains(region_key: str, graph, mountain_list) -> None:
+    """/api/plan_cameras가 산 분할(수십~90초 걸림)을 매번 다시 하지 않도록
+    배치 파이프라인이 이미 계산한 그래프+산 목록을 디스크에 저장해 둔다."""
+    GRAPH_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    path = GRAPH_CACHE_DIR / f"{region_key}.pkl"
+    with path.open("wb") as f:
+        pickle.dump({"graph": graph, "mountains": mountain_list}, f)
 
 
 def run_region(region_key: str, log=print) -> dict:
@@ -39,6 +51,7 @@ def run_region(region_key: str, log=print) -> dict:
     log(f"[{region_key}] 산불 확산 그래프 구성...")
     graph = fire_graph.build_fire_graph(dem)
     mountain_list = mountains.segment_mountains(dem, graph.coords)
+    _cache_graph_and_mountains(region_key, graph, mountain_list)
 
     log(f"[{region_key}] 산별 최소 카메라 배치(greedy k-center)...")
     mountain_coverage = camera_placement.place_cameras_all_mountains(graph, mountain_list)

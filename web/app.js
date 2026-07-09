@@ -17,10 +17,15 @@ let appState = {
   map: null,
   layerGroups: {},
   visibility: { ignition: true, smoke: true, mountain: true },
-  simMode: false,
+  pickMode: null, // null | "sim" | "area"
   simSeason: "봄",
   simLoading: false,
   selectedMountainId: null,
+  areaMode: "mountain", // "mountain" | "custom"
+  customArea: null, // { lon, lat, radiusM }
+  objective: "worst", // "worst" | "average"
+  queryMode: "target", // "target" | "count"
+  queryLoading: false,
 };
 
 async function init() {
@@ -46,8 +51,16 @@ function setupMap() {
   };
 
   appState.map.on("click", (e) => {
-    if (!appState.simMode || appState.simLoading) return;
-    runSimulation(e.latlng.lng, e.latlng.lat);
+    if (appState.pickMode === "sim") {
+      if (appState.simLoading) return;
+      runSimulation(e.latlng.lng, e.latlng.lat);
+    } else if (appState.pickMode === "area") {
+      const radius = Number(document.getElementById("area-radius-input").value) || 1500;
+      appState.customArea = { lon: e.latlng.lng, lat: e.latlng.lat, radiusM: radius };
+      document.getElementById("area-pick-status").textContent =
+        `위치 지정됨 (${e.latlng.lat.toFixed(4)}, ${e.latlng.lng.toFixed(4)}) · 반경 ${radius}m`;
+      runPlacementQuery();
+    }
   });
 }
 
@@ -79,15 +92,62 @@ function bindControls() {
 
   const simToggle = document.getElementById("sim-toggle-button");
   simToggle.addEventListener("click", () => {
-    appState.simMode = !appState.simMode;
-    simToggle.classList.toggle("is-active", appState.simMode);
-    simToggle.textContent = appState.simMode
-      ? "시뮬레이션 모드 켜짐 · 지도를 클릭하세요"
-      : "지도 클릭으로 발화 지점 지정";
-    document.getElementById("sim-status").textContent = appState.simMode
-      ? "지도 위 임의의 지점을 클릭하면 그 자리에서 시뮬레이션을 실행합니다."
-      : "";
+    const turningOn = appState.pickMode !== "sim";
+    setPickMode(turningOn ? "sim" : null);
   });
+
+  const areaToggle = document.getElementById("area-pick-button");
+  areaToggle.addEventListener("click", () => {
+    const turningOn = appState.pickMode !== "area";
+    setPickMode(turningOn ? "area" : null);
+  });
+
+  document.getElementById("area-mode-control").addEventListener("click", (e) => {
+    const btn = e.target.closest(".segment");
+    if (!btn) return;
+    setActiveSegment("area-mode-control", btn);
+    appState.areaMode = btn.dataset.areaMode;
+    const isCustom = appState.areaMode === "custom";
+    document.getElementById("mountain-select").style.display = isCustom ? "none" : "";
+    document.getElementById("custom-area-controls").style.display = isCustom ? "" : "none";
+    if (!isCustom) setPickMode(null);
+  });
+
+  document.getElementById("objective-control").addEventListener("click", (e) => {
+    const btn = e.target.closest(".segment");
+    if (!btn) return;
+    setActiveSegment("objective-control", btn);
+    appState.objective = btn.dataset.objective;
+  });
+
+  document.getElementById("query-mode-control").addEventListener("click", (e) => {
+    const btn = e.target.closest(".segment");
+    if (!btn) return;
+    setActiveSegment("query-mode-control", btn);
+    appState.queryMode = btn.dataset.queryMode;
+    const input = document.getElementById("query-value-input");
+    input.value = appState.queryMode === "target" ? 20 : 4;
+    input.max = appState.queryMode === "target" ? 999 : 20;
+  });
+
+  document.getElementById("query-run-button").addEventListener("click", () => runPlacementQuery());
+}
+
+function setPickMode(mode) {
+  appState.pickMode = mode;
+  const simToggle = document.getElementById("sim-toggle-button");
+  const areaToggle = document.getElementById("area-pick-button");
+  simToggle.classList.toggle("is-active", mode === "sim");
+  simToggle.textContent = mode === "sim"
+    ? "시뮬레이션 모드 켜짐 · 지도를 클릭하세요"
+    : "지도 클릭으로 발화 지점 지정";
+  document.getElementById("sim-status").textContent = mode === "sim"
+    ? "지도 위 임의의 지점을 클릭하면 그 자리에서 시뮬레이션을 실행합니다."
+    : "";
+  areaToggle.classList.toggle("is-active", mode === "area");
+  areaToggle.textContent = mode === "area"
+    ? "위치 지정 모드 켜짐 · 지도를 클릭하세요"
+    : "지도 클릭으로 위치 지정";
 }
 
 function setActiveSegment(containerId, activeBtn) {
@@ -433,16 +493,18 @@ function renderMountainLayer(mountain) {
   });
 }
 
-function renderMountainChart(mountain) {
+function renderMountainChart(mountain, objective = "worst") {
   const cams = mountain.recommendedCameras;
-  const maxTime = Math.max(1, ...cams.map((c) => c.worstCaseMin ?? 0));
+  const metricKey = objective === "average" ? "avgCaseMin" : "worstCaseMin";
+  const metricLabel = objective === "average" ? "평균" : "최악";
+  const maxTime = Math.max(1, ...cams.map((c) => c[metricKey] ?? 0));
   const rows = cams.map((c) => {
-    const pct = maxTime ? ((c.worstCaseMin ?? 0) / maxTime) * 100 : 0;
+    const pct = maxTime ? ((c[metricKey] ?? 0) / maxTime) * 100 : 0;
     return `
       <div class="mountain-chart-row">
         <span>#${c.order}</span>
         <div class="mountain-chart-bar-track"><div class="mountain-chart-bar-fill" style="width:${pct}%"></div></div>
-        <span>${c.worstCaseMin ?? "-"}분</span>
+        <span>${c[metricKey] ?? "-"}분</span>
       </div>`;
   }).join("");
   document.getElementById("mountain-chart").innerHTML = rows;
@@ -450,7 +512,63 @@ function renderMountainChart(mountain) {
   const last = cams[cams.length - 1];
   document.getElementById("mountain-summary").textContent =
     `${mountain.mountainId} (노드 ${mountain.nodeCount}개, 표고 ${Math.round(mountain.seed.elevation)}m): ` +
-    `카메라 ${cams.length}개로 최악 탐지 시간을 ${last.worstCaseMin ?? 0}분까지 줄일 수 있습니다.`;
+    `카메라 ${cams.length}개로 ${metricLabel} 탐지 시간을 ${last[metricKey] ?? 0}분까지 줄일 수 있습니다 ` +
+    `(최장 ${last.worstCaseMin ?? "-"}분 · 평균 ${last.avgCaseMin ?? "-"}분).`;
+}
+
+async function runPlacementQuery() {
+  if (appState.queryLoading) return;
+  const summaryEl = document.getElementById("mountain-summary");
+  const params = new URLSearchParams({ region: appState.region, objective: appState.objective });
+
+  if (appState.areaMode === "mountain") {
+    if (!appState.selectedMountainId) {
+      summaryEl.textContent = "먼저 산을 선택하세요.";
+      return;
+    }
+    params.set("mountainId", appState.selectedMountainId);
+  } else {
+    if (!appState.customArea) {
+      summaryEl.textContent = "먼저 지도에서 위치를 지정하세요.";
+      return;
+    }
+    params.set("lon", appState.customArea.lon);
+    params.set("lat", appState.customArea.lat);
+    params.set("radiusM", appState.customArea.radiusM);
+  }
+
+  const value = Number(document.getElementById("query-value-input").value);
+  if (appState.queryMode === "target") params.set("targetMinutes", value);
+  else params.set("cameraCount", value);
+
+  appState.queryLoading = true;
+  summaryEl.textContent = "계산 중...";
+  document.getElementById("mountain-chart").innerHTML = "";
+
+  try {
+    const res = await fetch(`/api/plan_cameras?${params.toString()}`);
+    const result = await res.json();
+    if (!res.ok) {
+      summaryEl.textContent = result.message || "계산에 실패했습니다.";
+      return;
+    }
+    renderPlacementResult(result);
+  } catch (err) {
+    summaryEl.textContent = "질의 요청에 실패했습니다.";
+  } finally {
+    appState.queryLoading = false;
+  }
+}
+
+function renderPlacementResult(result) {
+  renderMountainLayer({ hull: result.hull, recommendedCameras: result.recommendedCameras });
+  renderMountainChart({
+    mountainId: result.areaId, nodeCount: result.nodeCount, seed: result.seed,
+    recommendedCameras: result.recommendedCameras,
+  }, result.objective);
+
+  const [west, south, east, north] = result.bbox;
+  appState.map.flyToBounds([[south, west], [north, east]], { padding: [60, 60], maxZoom: 15, duration: 0.6 });
 }
 
 init();

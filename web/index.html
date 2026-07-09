@@ -78,16 +78,39 @@
 
           <section class="sidebar-card">
             <p class="card-kicker">그래프 최적화</p>
-            <h2>산별 최소 카메라 배치</h2>
+            <h2>카메라 배치 질의</h2>
             <div class="stack">
               <p class="selection-summary">
-                산마다 격자로 나눠 화재 확산(경사 가중)을 시뮬레이션하고,
-                최악의 탐지 시간이 최소가 되는 카메라 배치를 greedy k-center로
-                계산했습니다. 센서 사거리 500m~1km, 목표 20분 기준입니다.
-                지도의 옅은 점은 산마다 첫 번째(가장 중요한) 추천 카메라이고,
-                아래에서 산을 고르면 그 산의 전체 배치가 강조됩니다.
+                지도의 옅은 점은 산마다 기본(목표 20분/최대 6개) 1순위 카메라입니다.
+                아래에서 산을 고르거나 지도에 위치를 지정하고, 원하는 기준으로
+                즉석 계산할 수 있습니다.
               </p>
+              <div class="segment-control" id="area-mode-control">
+                <button class="segment is-active" data-area-mode="mountain">산 선택</button>
+                <button class="segment" data-area-mode="custom">지도에서 위치 지정</button>
+              </div>
               <select id="mountain-select"></select>
+              <div id="custom-area-controls" style="display:none;">
+                <button class="ghost-button" id="area-pick-button" type="button">지도 클릭으로 위치 지정</button>
+                <label class="control-label">반경(m, 300~5000)
+                  <input type="number" id="area-radius-input" value="1500" min="300" max="5000" step="100">
+                </label>
+                <div class="selection-summary" id="area-pick-status"></div>
+              </div>
+              <label class="control-label">목표
+                <div class="segment-control" id="objective-control">
+                  <button class="segment is-active" data-objective="worst">최장 탐지시간 최소화</button>
+                  <button class="segment" data-objective="average">평균 탐지시간 최소화</button>
+                </div>
+              </label>
+              <label class="control-label">기준
+                <div class="segment-control" id="query-mode-control">
+                  <button class="segment is-active" data-query-mode="target">목표 시간(분)</button>
+                  <button class="segment" data-query-mode="count">카메라 개수</button>
+                </div>
+              </label>
+              <input type="number" id="query-value-input" value="20" min="1" max="20">
+              <button class="ghost-button" id="query-run-button" type="button">이 기준으로 계산하기</button>
               <div id="mountain-chart"></div>
               <div class="selection-summary" id="mountain-summary"></div>
             </div>
