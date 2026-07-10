@@ -29,6 +29,7 @@ let appState = {
   selectedMountainId: null,
   areaMode: "mountain", // "mountain" | "custom"
   customArea: null, // { lon, lat, radiusM }
+  areaPreviewCircle: null,
   objective: "worst", // "worst" | "average"
   queryMode: "target", // "target" | "count"
   queryLoading: false,
@@ -62,13 +63,27 @@ function setupMap() {
       if (appState.simLoading) return;
       runSimulation(e.latlng.lng, e.latlng.lat);
     } else if (appState.pickMode === "area") {
-      const radius = Number(document.getElementById("area-radius-input").value) || 1500;
+      const radius = Math.min(5000, Math.max(300, Number(document.getElementById("area-radius-input").value) || 1500));
       appState.customArea = { lon: e.latlng.lng, lat: e.latlng.lat, radiusM: radius };
       document.getElementById("area-pick-status").textContent =
         `위치 지정됨 (${e.latlng.lat.toFixed(4)}, ${e.latlng.lng.toFixed(4)}) · 반경 ${radius}m`;
+      renderAreaPreviewCircle();
       runPlacementQuery();
     }
   });
+}
+
+function renderAreaPreviewCircle() {
+  const group = appState.layerGroups.bookmark;
+  if (appState.areaPreviewCircle) {
+    group.removeLayer(appState.areaPreviewCircle);
+    appState.areaPreviewCircle = null;
+  }
+  if (!appState.customArea) return;
+  appState.areaPreviewCircle = L.circle([appState.customArea.lat, appState.customArea.lon], {
+    radius: appState.customArea.radiusM,
+    color: "#ffe14d", weight: 1.5, fillColor: "#ffe14d", fillOpacity: 0.06, dashArray: "5,4",
+  }).addTo(group);
 }
 
 function bindControls() {
@@ -113,6 +128,16 @@ function bindControls() {
   areaToggle.addEventListener("click", () => {
     const turningOn = appState.pickMode !== "area";
     setPickMode(turningOn ? "area" : null);
+  });
+
+  document.getElementById("area-radius-input").addEventListener("input", (e) => {
+    const radius = Math.min(5000, Math.max(300, Number(e.target.value) || 1500));
+    if (appState.customArea) {
+      appState.customArea.radiusM = radius;
+      document.getElementById("area-pick-status").textContent =
+        `위치 지정됨 (${appState.customArea.lat.toFixed(4)}, ${appState.customArea.lon.toFixed(4)}) · 반경 ${radius}m`;
+      renderAreaPreviewCircle();
+    }
   });
 
   document.getElementById("area-mode-control").addEventListener("click", (e) => {
@@ -172,6 +197,10 @@ async function loadRegion(regionKey) {
   appState.region = regionKey;
   document.getElementById("sim-result-wrap").style.display = "none";
   appState.layerGroups.sim.clearLayers();
+  appState.layerGroups.bookmark.clearLayers();
+  appState.customArea = null;
+  appState.areaPreviewCircle = null;
+  document.getElementById("area-pick-status").textContent = "";
   const res = await fetch(`./data/${regionKey}.json`);
   const data = await res.json();
   appState.data = data;
