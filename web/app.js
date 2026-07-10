@@ -11,6 +11,12 @@ const DIRECTIONS_16 = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
 
 const MOUNTAIN_LIST_LIMIT = 40; // 산이 수백~천 단위라 목록은 노드 수 상위 N개만 보여준다
 
+// VWorld 주소 지오코딩(api.vworld.kr/req/address)으로 확인한 좌표 - "1리" 자연부락
+// 단위까지는 구조화 주소 체계가 못 내려가서, 구계리(행정리) 대표 좌표를 쓴다.
+const BOOKMARKED_LOCATIONS = {
+  guge1ri: { label: "구계1리(의성군 단촌면 구계리)", region: "uiseong", lon: 128.766575, lat: 36.475073 },
+};
+
 let appState = {
   region: "uiseong",
   data: null,
@@ -48,6 +54,7 @@ function setupMap() {
     mountain: L.layerGroup().addTo(appState.map),
     mountainOverview: L.layerGroup().addTo(appState.map),
     sim: L.layerGroup().addTo(appState.map),
+    bookmark: L.layerGroup().addTo(appState.map),
   };
 
   appState.map.on("click", (e) => {
@@ -70,6 +77,12 @@ function bindControls() {
     if (!btn) return;
     setActiveSegment("region-control", btn);
     loadRegion(btn.dataset.region);
+  });
+
+  document.getElementById("bookmark-list").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-bookmark]");
+    if (!btn) return;
+    flyToBookmark(btn.dataset.bookmark);
   });
 
   document.querySelectorAll("#layer-toggles input").forEach((input) => {
@@ -292,7 +305,7 @@ function renderSmokeLayer() {
 function applyLayerVisibility() {
   // "sim"/"mountainOverview"에는 토글 체크박스가 없다 - 항상 지도에 붙어 있어야
   // 하므로 이 루프 대상에서 제외한다.
-  const alwaysOn = new Set(["sim", "mountainOverview"]);
+  const alwaysOn = new Set(["sim", "mountainOverview", "bookmark"]);
   for (const [key, group] of Object.entries(appState.layerGroups)) {
     if (alwaysOn.has(key)) continue;
     if (appState.visibility[key]) {
@@ -569,6 +582,29 @@ function renderPlacementResult(result) {
 
   const [west, south, east, north] = result.bbox;
   appState.map.flyToBounds([[south, west], [north, east]], { padding: [60, 60], maxZoom: 15, duration: 0.6 });
+}
+
+async function flyToBookmark(bookmarkId) {
+  const bookmark = BOOKMARKED_LOCATIONS[bookmarkId];
+  if (!bookmark) return;
+
+  if (appState.region !== bookmark.region) {
+    const btn = document.querySelector(`#region-control [data-region="${bookmark.region}"]`);
+    if (btn) setActiveSegment("region-control", btn);
+    await loadRegion(bookmark.region);
+  }
+
+  const group = appState.layerGroups.bookmark;
+  group.clearLayers();
+  L.circleMarker([bookmark.lat, bookmark.lon], {
+    radius: 8, color: "#4de2b1", fillColor: "#4de2b1", fillOpacity: 0.35, weight: 2,
+  }).addTo(group);
+  L.marker([bookmark.lat, bookmark.lon], {
+    icon: L.divIcon({ className: "", html: `<div class="sim-time-label detect">${bookmark.label}</div>`, iconSize: null, iconAnchor: [-10, 10] }),
+    interactive: false,
+  }).addTo(group);
+
+  appState.map.flyTo([bookmark.lat, bookmark.lon], 15, { duration: 0.8 });
 }
 
 init();
